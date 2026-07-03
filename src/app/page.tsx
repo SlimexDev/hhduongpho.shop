@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Post, INITIAL_POSTS } from "@/data/seedData";
+import { Post } from "@/data/seedData";
 import { PostCard } from "@/components/PostCard/PostCard";
 import styles from "./page.module.css";
 
@@ -11,34 +11,25 @@ export default function HomePage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Safely load posts from localStorage on mount (hydration safe)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("slime_posts");
-      if (saved) {
-        setPosts(JSON.parse(saved));
-      } else {
-        localStorage.setItem("slime_posts", JSON.stringify(INITIAL_POSTS));
-        setPosts(INITIAL_POSTS);
+  const fetchPosts = async () => {
+    try {
+      const res = await fetch("/api/posts");
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data);
       }
+    } catch (e) {
+      console.error("Lỗi tải bài viết từ API:", e);
+    } finally {
       setIsLoaded(true);
     }
-  }, []);
+  };
 
-  // Sync posts if storage updates elsewhere (e.g. admin tab)
+  // Fetch posts on mount and periodically sync
   useEffect(() => {
-    const handleStorageChange = () => {
-      const saved = localStorage.getItem("slime_posts");
-      if (saved) setPosts(JSON.parse(saved));
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    const interval = setInterval(handleStorageChange, 2000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
+    fetchPosts();
+    const interval = setInterval(fetchPosts, 4000); // sync every 4 seconds
+    return () => clearInterval(interval);
   }, []);
 
   // Filter posts based on search query only

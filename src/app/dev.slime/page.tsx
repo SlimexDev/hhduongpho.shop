@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Post, INITIAL_POSTS } from "@/data/seedData";
+import { Post } from "@/data/seedData";
 import { VideoEmbed } from "@/components/VideoEmbed/VideoEmbed";
 import { CustomRender } from "@/components/CustomRender/CustomRender";
 import styles from "./dev.slime.module.css";
@@ -30,40 +30,40 @@ export default function AdminPage() {
   const [globalCss, setGlobalCss] = useState("");
   const [globalJs, setGlobalJs] = useState("");
 
-  // Load posts and global configs from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      // Load Posts
-      const savedPosts = localStorage.getItem("slime_posts");
-      if (savedPosts) {
-        setPosts(JSON.parse(savedPosts));
-      } else {
-        localStorage.setItem("slime_posts", JSON.stringify(INITIAL_POSTS));
-        setPosts(INITIAL_POSTS);
+  const fetchPosts = async () => {
+    try {
+      const res = await fetch("/api/posts");
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data);
       }
-
-      // Load Global Code Config
-      const savedGlobal = localStorage.getItem("slime_global_code");
-      if (savedGlobal) {
-        try {
-          const { html, css, js } = JSON.parse(savedGlobal);
-          setGlobalHtml(html || "");
-          setGlobalCss(css || "");
-          setGlobalJs(js || "");
-        } catch (e) {
-          console.error("Lỗi parse config toàn trang:", e);
-        }
-      }
-
-      setIsLoaded(true);
+    } catch (e) {
+      console.error("Lỗi tải bài viết từ API:", e);
     }
-  }, []);
-
-  // Save posts to localStorage whenever they change
-  const saveToStorage = (updatedPosts: Post[]) => {
-    localStorage.setItem("slime_posts", JSON.stringify(updatedPosts));
-    setPosts(updatedPosts);
   };
+
+  const fetchGlobalCode = async () => {
+    try {
+      const res = await fetch("/api/global-code");
+      if (res.ok) {
+        const data = await res.json();
+        setGlobalHtml(data.html || "");
+        setGlobalCss(data.css || "");
+        setGlobalJs(data.js || "");
+      }
+    } catch (e) {
+      console.error("Lỗi tải cấu hình toàn trang:", e);
+    }
+  };
+
+  // Load initial data on mount
+  useEffect(() => {
+    const initData = async () => {
+      await Promise.all([fetchPosts(), fetchGlobalCode()]);
+      setIsLoaded(true);
+    };
+    initData();
+  }, []);
 
   // Reset form inputs
   const resetForm = () => {
@@ -89,49 +89,42 @@ export default function AdminPage() {
 
     const defaultImage = imageUrl.trim() || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80";
 
-    if (editingId) {
-      // Edit mode
-      const updated = posts.map((p) =>
-        p.id === editingId
-          ? {
-              ...p,
-              title,
-              excerpt: excerpt.trim() || content.substring(0, 120) + "...",
-              content,
-              category: "Chung", // default category
-              author,
-              imageUrl: defaultImage,
-              videoUrl: videoUrl.trim() || undefined,
-              customHtml: customHtml.trim() || undefined,
-              customCss: customCss.trim() || undefined,
-              customJs: customJs.trim() || undefined,
-            }
-          : p
-      );
-      saveToStorage(updated);
-      alert("Đã cập nhật bài viết thành công!");
-    } else {
-      // Create mode
-      const newPost: Post = {
-        id: "post-" + Date.now(),
-        title,
-        excerpt: excerpt.trim() || content.substring(0, 120) + "...",
-        content,
-        category: "Chung", // default category
-        author,
-        imageUrl: defaultImage,
-        videoUrl: videoUrl.trim() || undefined,
-        customHtml: customHtml.trim() || undefined,
-        customCss: customCss.trim() || undefined,
-        customJs: customJs.trim() || undefined,
-        createdAt: new Date().toISOString(),
-      };
-      saveToStorage([newPost, ...posts]);
-      alert("Đã đăng bài viết mới thành công!");
-    }
+    const postPayload: Post = {
+      id: editingId || "post-" + Date.now(),
+      title,
+      excerpt: excerpt.trim() || content.substring(0, 120) + "...",
+      content,
+      category: "Chung", // default category
+      author,
+      imageUrl: defaultImage,
+      videoUrl: videoUrl.trim() || undefined,
+      customHtml: customHtml.trim() || undefined,
+      customCss: customCss.trim() || undefined,
+      customJs: customJs.trim() || undefined,
+      createdAt: editingId 
+        ? (posts.find(p => p.id === editingId)?.createdAt || new Date().toISOString()) 
+        : new Date().toISOString(),
+    };
 
-    resetForm();
-    setActiveTab("list");
+    fetch("/api/posts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(postPayload),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          alert(editingId ? "Đã cập nhật bài viết thành công!" : "Đã đăng bài viết mới thành công!");
+          await fetchPosts();
+          resetForm();
+          setActiveTab("list");
+        } else {
+          alert("Lỗi khi lưu bài viết lên máy chủ.");
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Lỗi kết nối đến máy chủ.");
+      });
   };
 
   // Set up form for Editing
@@ -152,8 +145,21 @@ export default function AdminPage() {
   // Delete a post
   const deletePost = (id: string) => {
     if (confirm("Bạn có chắc chắn muốn xóa bài viết này không?")) {
-      const filtered = posts.filter((p) => p.id !== id);
-      saveToStorage(filtered);
+      fetch(`/api/posts?id=${id}`, {
+        method: "DELETE",
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            alert("Đã xóa bài viết thành công!");
+            await fetchPosts();
+          } else {
+            alert("Lỗi khi xóa bài viết.");
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert("Lỗi kết nối đến máy chủ.");
+        });
     }
   };
 
@@ -170,10 +176,23 @@ export default function AdminPage() {
   // Reset to original seed data
   const handleResetData = () => {
     if (confirm("Hành động này sẽ khôi phục dữ liệu về bài viết mặc định và xóa hết các bài viết bạn đã đăng. Bạn có chắc không?")) {
-      localStorage.setItem("slime_posts", JSON.stringify(INITIAL_POSTS));
-      setPosts(INITIAL_POSTS);
-      resetForm();
-      setActiveTab("list");
+      fetch("/api/posts?action=reset", {
+        method: "POST",
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            alert("Đã khôi phục dữ liệu mẫu thành công!");
+            await fetchPosts();
+            resetForm();
+            setActiveTab("list");
+          } else {
+            alert("Lỗi khi khôi phục dữ liệu.");
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert("Lỗi kết nối đến máy chủ.");
+        });
     }
   };
 
@@ -185,9 +204,25 @@ export default function AdminPage() {
       css: globalCss,
       js: globalJs,
     };
-    localStorage.setItem("slime_global_code", JSON.stringify(globalCode));
-    alert("Đã lưu cấu hình HTML/CSS/JS toàn trang thành công!");
-    setActiveTab("list");
+
+    fetch("/api/global-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(globalCode),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          alert("Đã lưu cấu hình HTML/CSS/JS toàn trang thành công!");
+          await fetchGlobalCode();
+          setActiveTab("list");
+        } else {
+          alert("Lỗi khi lưu cấu hình toàn trang.");
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Lỗi kết nối đến máy chủ.");
+      });
   };
 
   if (!isLoaded) {

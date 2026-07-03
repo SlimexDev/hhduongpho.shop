@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Post } from "@/data/seedData";
 import { VideoEmbed } from "@/components/VideoEmbed/VideoEmbed";
@@ -10,7 +10,6 @@ import styles from "./post.module.css";
 
 export default function PostDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params?.id as string;
 
   const [post, setPost] = useState<Post | null>(null);
@@ -18,16 +17,24 @@ export default function PostDetailPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && id) {
-      const saved = localStorage.getItem("slime_posts");
-      if (saved) {
-        const postsList: Post[] = JSON.parse(saved);
-        const found = postsList.find((p) => p.id === id);
-        if (found) {
-          setPost(found);
-        }
-      }
-      setIsLoaded(true);
+    if (id) {
+      fetch(`/api/posts?id=${id}`)
+        .then((res) => {
+          if (res.ok) {
+            return res.json();
+          }
+          throw new Error("Không tìm thấy bài viết");
+        })
+        .then((data) => {
+          setPost(data);
+        })
+        .catch((err) => {
+          console.error("Lỗi tải chi tiết bài viết:", err);
+          setPost(null);
+        })
+        .finally(() => {
+          setIsLoaded(true);
+        });
     }
   }, [id]);
 
