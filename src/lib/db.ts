@@ -1,10 +1,27 @@
 import fs from "fs";
 import path from "path";
-import { kv } from "@vercel/kv";
+import Redis from "ioredis";
 import { Post, INITIAL_POSTS } from "@/data/seedData";
 
-const isKvActive = !!process.env.KV_REST_API_URL;
+const isKvActive = !!process.env.KV_REDIS_URL;
 const LOCAL_DB_PATH = path.join(process.cwd(), "src/data/local_db.json");
+
+// Initialize standard Redis client
+let redisClient: Redis | null = null;
+if (isKvActive) {
+  try {
+    redisClient = new Redis(process.env.KV_REDIS_URL!, {
+      maxRetriesPerRequest: 2,
+      connectTimeout: 5000,
+    });
+    
+    redisClient.on("error", (err) => {
+      console.error("Lỗi kết nối Redis Client:", err);
+    });
+  } catch (e) {
+    console.error("Lỗi cấu hình Redis:", e);
+  }
+}
 
 const DEFAULT_GLOBAL_CODE = {
   html: `<!-- Popups quảng cáo Shopee, TikTok Shop -->
@@ -186,55 +203,76 @@ interface LocalDB {
 
 // Ensure the local database exists and contains initial data
 function ensureLocalDb() {
-  const dir = path.dirname(LOCAL_DB_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  if (!fs.existsSync(LOCAL_DB_PATH)) {
-    const initialDb: LocalDB = {
-      posts: INITIAL_POSTS,
-      global_code: DEFAULT_GLOBAL_CODE,
-    };
-    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(initialDb, null, 2), "utf-8");
+  try {
+    const dir = path.dirname(LOCAL_DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (!fs.existsSync(LOCAL_DB_PATH)) {
+      const initialDb: LocalDB = {
+        posts: INITIAL_POSTS,
+        global_code: DEFAULT_GLOBAL_CODE,
+      };
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(initialDb, null, 2), "utf-8");
+    }
+  } catch (e) {
+    console.warn("Không thể ghi file DB cục bộ trên serverless environment (read-only):", e);
   }
 }
 
 function readLocalDb(): LocalDB {
   ensureLocalDb();
   try {
-    const data = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
-    return JSON.parse(data);
+    if (fs.existsSync(LOCAL_DB_PATH)) {
+      const data = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
+      return JSON.parse(data);
+    }
   } catch (e) {
-    console.error("Lỗi đọc local JSON DB, đang reset về mặc định:", e);
-    const initialDb: LocalDB = {
-      posts: INITIAL_POSTS,
-      global_code: DEFAULT_GLOBAL_CODE,
-    };
-    return initialDb;
+    console.error("Lỗi đọc local JSON DB:", e);
   }
+  return {
+    posts: INITIAL_POSTS,
+    global_code: DEFAULT_GLOBAL_CODE,
+  };
 }
 
 function writeLocalDb(data: LocalDB) {
-  ensureLocalDb();
-  fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2), "utf-8");
+  try {
+    ensureLocalDb();
+    if (fs.existsSync(path.dirname(LOCAL_DB_PATH))) {
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2), "utf-8");
+    }
+  } catch (e) {
+    console.error("Lỗi ghi file local JSON DB:", e);
+  }
 }
 
 export async function getPosts(): Promise<Post[]> {
-  if (isKvActive) {
-    const posts = await kv.get<Post[]>("posts");
-    if (!posts) {
-      await kv.set("posts", INITIAL_POSTS);
+  if (redisClient) {
+    try {
+      const data = await redisClient.get("posts");
+      if (!data) {
+        await redisClient.set("posts", JSON.stringify(INITIAL_POSTS));
+        return INITIAL_POSTS;
+      }
+      return JSON.parse(data);
+    } catch (e) {
+      console.error("Lỗi truy vấn Redis (getPosts), chuyển sang in-memory fallback:", e);
       return INITIAL_POSTS;
     }
-    return posts;
   } else {
     return readLocalDb().posts;
   }
 }
 
 export async function savePosts(posts: Post[]): Promise<void> {
-  if (isKvActive) {
-    await kv.set("posts", posts);
+  if (redisClient) {
+    try {
+      await redisClient.set("posts", JSON.stringify(posts));
+    } catch (e) {
+      console.error("Lỗi ghi Redis (savePosts):", e);
+      throw e;
+    }
   } else {
     const db = readLocalDb();
     db.posts = posts;
@@ -243,21 +281,31 @@ export async function savePosts(posts: Post[]): Promise<void> {
 }
 
 export async function getGlobalCode(): Promise<{ html: string; css: string; js: string }> {
-  if (isKvActive) {
-    const code = await kv.get<{ html: string; css: string; js: string }>("global_code");
-    if (!code) {
-      await kv.set("global_code", DEFAULT_GLOBAL_CODE);
+  if (redisClient) {
+    try {
+      const data = await redisClient.get("global_code");
+      if (!data) {
+        await redisClient.set("global_code", JSON.stringify(DEFAULT_GLOBAL_CODE));
+        return DEFAULT_GLOBAL_CODE;
+      }
+      return JSON.parse(data);
+    } catch (e) {
+      console.error("Lỗi truy vấn Redis (getGlobalCode), dùng in-memory fallback:", e);
       return DEFAULT_GLOBAL_CODE;
     }
-    return code;
   } else {
     return readLocalDb().global_code;
   }
 }
 
 export async function saveGlobalCode(code: { html: string; css: string; js: string }): Promise<void> {
-  if (isKvActive) {
-    await kv.set("global_code", code);
+  if (redisClient) {
+    try {
+      await redisClient.set("global_code", JSON.stringify(code));
+    } catch (e) {
+      console.error("Lỗi ghi Redis (saveGlobalCode):", e);
+      throw e;
+    }
   } else {
     const db = readLocalDb();
     db.global_code = code;
