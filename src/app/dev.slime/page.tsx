@@ -454,14 +454,14 @@ export default function AdminPage() {
                 </div>
 
                 <div className={styles.inputGroup}>
-                  <label htmlFor="videoUrl">Đường dẫn video (YouTube hoặc link trực tiếp MP4)</label>
-                  <input
-                    type="url"
+                  <label htmlFor="videoUrl">Đường dẫn video (YouTube hoặc link trực tiếp MP4, mỗi link trên một dòng)</label>
+                  <textarea
                     id="videoUrl"
                     value={videoUrl}
                     onChange={(e) => setVideoUrl(e.target.value)}
-                    placeholder="https://www.youtube.com/watch?v=... hoặc .mp4"
-                  />
+                    placeholder="https://www.youtube.com/watch?v=...&#10;https://example.com/video.mp4"
+                    rows={4}
+                  ></textarea>
                 </div>
 
                 <div className={styles.inputGroup}>
@@ -587,7 +587,15 @@ export default function AdminPage() {
                 {previewPost.videoUrl && (
                   <div className={styles.prevSection}>
                     <h4 className={styles.prevSectionTitle}>🎥 Video đính kèm</h4>
-                    <VideoEmbed videoUrl={previewPost.videoUrl} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                      {previewPost.videoUrl
+                        .split("\n")
+                        .map((url) => url.trim())
+                        .filter(Boolean)
+                        .map((url, idx) => (
+                          <VideoEmbed key={idx} videoUrl={url} />
+                        ))}
+                    </div>
                   </div>
                 )}
 

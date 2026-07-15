@@ -56,7 +56,15 @@ export const PostDetail: React.FC<PostDetailProps> = ({ post, onClose }) => {
           {post.videoUrl && (
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>🎥 Video đính kèm</h3>
-              <VideoEmbed videoUrl={post.videoUrl} />
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                {post.videoUrl
+                  .split("\n")
+                  .map((url) => url.trim())
+                  .filter(Boolean)
+                  .map((url, idx) => (
+                    <VideoEmbed key={idx} videoUrl={url} />
+                  ))}
+              </div>
             </div>
           )}
 

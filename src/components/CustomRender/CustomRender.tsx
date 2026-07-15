@@ -58,9 +58,43 @@ export const CustomRender: React.FC<CustomRenderProps> = ({ html, css, js, postI
 
     // Execute Custom JS inside the shadow DOM scope
     if (js && js.trim()) {
-      // Create a function that passes shadowRoot as 'document'
-      // so document.getElementById() works inside shadow DOM
       try {
+        // Create a Proxy for document to redirect queries to Shadow DOM
+        const documentProxy = new Proxy(window.document, {
+          get(target, prop, receiver) {
+            if (prop === "getElementById") {
+              return (id: string) => shadowRoot!.getElementById(id) || target.getElementById(id);
+            }
+            if (prop === "querySelector") {
+              return (selector: string) => shadowRoot!.querySelector(selector) || target.querySelector(selector);
+            }
+            if (prop === "querySelectorAll") {
+              return (selector: string) => {
+                const shadowResults = shadowRoot!.querySelectorAll(selector);
+                return shadowResults.length > 0 ? shadowResults : target.querySelectorAll(selector);
+              };
+            }
+            if (prop === "getElementsByClassName") {
+              return (className: string) => {
+                const shadowResults = shadowRoot!.querySelectorAll("." + className);
+                return shadowResults.length > 0 ? shadowResults : target.getElementsByClassName(className);
+              };
+            }
+            if (prop === "getElementsByTagName") {
+              return (tagName: string) => {
+                const shadowResults = shadowRoot!.querySelectorAll(tagName);
+                return shadowResults.length > 0 ? shadowResults : target.getElementsByTagName(tagName);
+              };
+            }
+            
+            const value = Reflect.get(target, prop, receiver);
+            if (typeof value === "function") {
+              return value.bind(target);
+            }
+            return value;
+          }
+        });
+
         const executeScript = new Function(
           "document",
           "container",
@@ -75,7 +109,7 @@ export const CustomRender: React.FC<CustomRenderProps> = ({ html, css, js, postI
         
         // Delay execution slightly to ensure elements are mounted inside Shadow DOM
         const timeoutId = setTimeout(() => {
-          executeScript(shadowRoot, wrapper);
+          executeScript(documentProxy, wrapper);
         }, 80);
 
         return () => clearTimeout(timeoutId);
