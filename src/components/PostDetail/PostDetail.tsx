@@ -33,20 +33,7 @@ export const PostDetail: React.FC<PostDetailProps> = ({ post, onClose }) => {
           ✕
         </button>
 
-        {post.imageUrl && (
-          <div className={styles.imageContainer}>
-            <img
-              src={post.imageUrl}
-              alt={post.title}
-              className={styles.image}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80";
-              }}
-            />
-            <div className={styles.imageOverlay} />
-          </div>
-        )}
+
 
         <div className={styles.body}>
           <div className={styles.meta}>
